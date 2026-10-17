@@ -125,6 +125,7 @@ const PERMISSION_LABELS: Record<string, { label: string; description: string }> 
   "groups.delete": { label: "Delete Groups", description: "Deactivate / remove groups." },
 
   "fpas.fill": { label: "Fill FPAS Form", description: "Fill out the Faculty Performance Appraisal form." },
+  "fpas.export": { label: "Bulk Export FPAS Forms", description: "Download submitted FPAS forms in bulk (merged PDF or ZIP). Export-only holders are limited to their own department." },
   "fpas.manage": { label: "Manage FPAS", description: "Configure which departments can fill FPAS (group access settings)." },
 
   "biometric.enroll": { label: "Enroll Fingerprints", description: "Enroll and delete employee fingerprint templates." },
@@ -186,7 +187,7 @@ const PERMISSIONS_BY_MODULE: PermissionModule[] = [
   },
   {
     label: "FPAS (Faculty Appraisal)",
-    permissions: ["fpas.fill", "fpas.manage"],
+    permissions: ["fpas.fill", "fpas.export", "fpas.manage"],
   },
 ].map((m) => ({
   label: m.label,

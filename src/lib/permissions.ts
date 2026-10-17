@@ -59,6 +59,7 @@ export const PERMISSIONS = [
 
   // FPAS (Faculty Performance Appraisal)
   "fpas.fill",
+  "fpas.export",
   "fpas.manage",
 
   // Roles

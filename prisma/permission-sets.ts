@@ -36,6 +36,7 @@ export const ALL_PERMISSIONS = [
   "reports.view",
   "reports.export",
   "fpas.fill",
+  "fpas.export",
   "fpas.manage",
   "roles.view",
   "roles.create",
@@ -116,6 +117,7 @@ export const DEAN_PERMS = [
   "leave.request",
   "reports.view",
   "fpas.fill",
+  "fpas.export",
   "groups.view",
 ];
 

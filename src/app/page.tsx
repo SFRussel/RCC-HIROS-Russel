@@ -18,7 +18,7 @@ import { EvaluationPage } from "@/components/evaluation/evaluation-pages";
 import { ReportsPage } from "@/components/reports/report-pages";
 import { RoleListPage, RoleFormPage } from "@/components/admin/role-pages";
 import { GroupListPage, GroupFormPage } from "@/components/admin/group-pages";
-import { FpasPage } from "@/components/fpas/fpas-pages";
+import { FpasPage, FpasExportPage } from "@/components/fpas/fpas-pages";
 
 // ═══════════════════════════════════════════════════════════════
 // Error Boundary — catches render errors in page components
@@ -132,6 +132,10 @@ export default function HomePage() {
       content = currentSubpage === "settings" ? (
         <PermissionGuard require="fpas.manage" fallback={<PermissionDenied />}>
           <FpasPage showSettings />
+        </PermissionGuard>
+      ) : currentSubpage === "export" ? (
+        <PermissionGuard any={["fpas.export", "fpas.manage"]} fallback={<PermissionDenied />}>
+          <FpasExportPage />
         </PermissionGuard>
       ) : (
         <PermissionGuard any={["fpas.fill", "fpas.manage"]} fallback={<PermissionDenied />}>

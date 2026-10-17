@@ -265,6 +265,14 @@ export function EmployeeListPage() {
               Contract Types
             </button>
           )}
+          {has("fpas.export") && !has("fpas.manage") && (
+            <button
+              onClick={() => setCurrentPage("fpas", "export")}
+              className="inline-flex items-center gap-2 bg-rcc-surface border border-rcc-border text-rcc-text-secondary px-4 py-2 rounded-md text-sm font-semibold hover:bg-rcc-bg transition-colors"
+            >
+              FPAS Export
+            </button>
+          )}
           {has("fpas.manage") && (
             <button
               onClick={() => setCurrentPage("fpas", "settings")}

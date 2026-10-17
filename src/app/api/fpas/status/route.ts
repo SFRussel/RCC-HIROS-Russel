@@ -6,20 +6,33 @@ const SETTING_KEY = "fpas_enabled_groups";
 
 // ═══════════════════════════════════════════════════════════════
 // GET /api/fpas/status — employees with FPAS submission status
-// Entry: fpas.fill or fpas.manage. Scope: fpas.manage sees all
-// employees; everyone else sees only their own row. Only returns
+// Entry: fpas.fill, fpas.export or fpas.manage. Scope: fpas.manage
+// sees all employees; fpas.export-only holders see their whole
+// department; everyone else sees only their own row. Only returns
 // employees in FPAS-enabled groups (when any are configured).
 // ═══════════════════════════════════════════════════════════════
 export async function GET(request: NextRequest) {
   try {
     const auth = await requireAnyPermission(request, [
       "fpas.fill",
+      "fpas.export",
       "fpas.manage",
     ]);
     if (!auth.ok) return auth.response;
     const { user } = auth;
 
     const canManage = user.isSystem || user.permissions.includes("fpas.manage");
+
+    // Export-only holders (fpas.export without manage) see their whole
+    // department; falls through to self-only when they have no group.
+    let ownGroupId: string | null = null;
+    if (!canManage && user.permissions.includes("fpas.export")) {
+      const me = await db.employee.findUnique({
+        where: { id: user.id },
+        select: { groupId: true },
+      });
+      ownGroupId = me?.groupId ?? null;
+    }
 
     // Get enabled group IDs from settings
     const setting = await db.systemSetting.findUnique({
@@ -42,11 +55,18 @@ export async function GET(request: NextRequest) {
 
     // Only show employees in FPAS-enabled groups (if any are configured)
     if (enabledGroupIds.length > 0) {
-      employeeWhere.groupId = { in: enabledGroupIds };
+      // Export-only holders are additionally pinned to their own group;
+      // an empty `in` list matches nothing (their group isn't enabled).
+      employeeWhere.groupId = ownGroupId
+        ? { in: enabledGroupIds.includes(ownGroupId) ? [ownGroupId] : [] }
+        : { in: enabledGroupIds };
+    } else if (ownGroupId) {
+      employeeWhere.groupId = ownGroupId;
     }
 
-    // Managers see all employees; everyone else sees only self.
-    if (!canManage) {
+    // Managers see all employees; export-only holders see their
+    // department (above); everyone else sees only self.
+    if (!canManage && !ownGroupId) {
       employeeWhere.id = user.id;
     }
 

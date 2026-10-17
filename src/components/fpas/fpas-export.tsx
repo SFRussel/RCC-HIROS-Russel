@@ -1,10 +1,14 @@
 "use client";
 
 // ═══════════════════════════════════════════════════════════════
-// FPAS Export Hub — lives inside FPAS Configuration (fpas.manage
-// only). Pick a school year + department, tick employees (badges
-// show who submitted), Export builds one template-faithful print
-// document per submitted member for Save-as-PDF.
+// FPAS Export Hub — inside FPAS Configuration (fpas.manage) it is
+// free to pick any department; standalone (fpas.export) it receives
+// a lockedGroup and the department selector is replaced by a fixed
+// chip — the server additionally pins export-only callers to their
+// own department's group code, so the lock is defense in depth.
+// Pick a school year + department, tick employees (badges show who
+// submitted), Export builds one template-faithful print document
+// per submitted member for Save-as-PDF.
 // ═══════════════════════════════════════════════════════════════
 
 import { useEffect, useMemo, useState } from "react";
@@ -39,9 +43,18 @@ function currentSY(): string {
   return `${y}-${y + 1}`;
 }
 
-export function FpasExportHub({ groups, onPreviewChange }: { groups: GroupBrief[]; onPreviewChange?: (open: boolean) => void }) {
+export function FpasExportHub({
+  groups,
+  lockedGroup,
+  onPreviewChange,
+}: {
+  groups: GroupBrief[];
+  /** When set, scope is locked to this department (export-only holders). */
+  lockedGroup?: GroupBrief | null;
+  onPreviewChange?: (open: boolean) => void;
+}) {
   const [schoolYear, setSchoolYear] = useState(currentSY());
-  const [deptId, setDeptId] = useState<string>("ALL");
+  const [deptId, setDeptId] = useState<string>(lockedGroup?.id ?? "ALL");
   const [employees, setEmployees] = useState<StatusEmployee[]>([]);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -285,17 +298,26 @@ export function FpasExportHub({ groups, onPreviewChange }: { groups: GroupBrief[
             title="School year"
             className="w-28 px-2 py-1.5 bg-rcc-bg border border-rcc-border rounded-md text-xs text-rcc-text-primary font-mono focus:outline-none focus:ring-2 focus:ring-rcc-accent/40"
           />
-          <select
-            value={deptId}
-            onChange={(e) => setDeptId(e.target.value)}
-            title="Department"
-            className="px-2 py-1.5 bg-rcc-bg border border-rcc-border rounded-md text-xs text-rcc-text-primary focus:outline-none focus:ring-2 focus:ring-rcc-accent/40"
-          >
-            <option value="ALL">All departments</option>
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>{g.name} ({g.code})</option>
-            ))}
-          </select>
+          {lockedGroup ? (
+            <span
+              title="Fixed to your department"
+              className="inline-flex items-center px-2.5 py-1.5 bg-rcc-bg border border-rcc-border rounded-md text-xs text-rcc-text-primary font-medium"
+            >
+              {lockedGroup.name} ({lockedGroup.code})
+            </span>
+          ) : (
+            <select
+              value={deptId}
+              onChange={(e) => setDeptId(e.target.value)}
+              title="Department"
+              className="px-2 py-1.5 bg-rcc-bg border border-rcc-border rounded-md text-xs text-rcc-text-primary focus:outline-none focus:ring-2 focus:ring-rcc-accent/40"
+            >
+              <option value="ALL">All departments</option>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>{g.name} ({g.code})</option>
+              ))}
+            </select>
+          )}
           <select
             value={scope}
             onChange={(e) => setScope(e.target.value as "selected" | "submitted")}

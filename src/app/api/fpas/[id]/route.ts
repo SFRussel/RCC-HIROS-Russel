@@ -5,7 +5,7 @@ import { canFillFpas } from "@/lib/fpas";
 
 // ═══════════════════════════════════════════════════════════════
 // GET /api/fpas/[id] — get a single submission
-// Access: owner or fpas.manage (all submissions).
+// Access: owner, fpas.export (own department only), or fpas.manage.
 // ═══════════════════════════════════════════════════════════════
 export async function GET(
   request: NextRequest,
@@ -14,6 +14,7 @@ export async function GET(
   try {
     const auth = await requireAnyPermission(request, [
       "fpas.fill",
+      "fpas.export",
       "fpas.manage",
     ]);
     if (!auth.ok) return auth.response;
@@ -48,9 +49,21 @@ export async function GET(
       );
     }
 
-    // Check access: owner or fpas.manage (all submissions).
+    // Check access: owner, fpas.export (own department only), or
+    // fpas.manage (all submissions).
     const canManage = user.isSystem || user.permissions.includes("fpas.manage");
-    if (submission.employeeId !== user.id && !canManage) {
+    let allowed = submission.employeeId === user.id || canManage;
+    if (
+      !allowed &&
+      user.permissions.includes("fpas.export")
+    ) {
+      const me = await db.employee.findUnique({
+        where: { id: user.id },
+        select: { groupId: true },
+      });
+      allowed = !!me?.groupId && me.groupId === submission.employee?.group?.id;
+    }
+    if (!allowed) {
       return NextResponse.json(
         { error: "Forbidden - you are not allowed to view this submission" },
         { status: 403 }

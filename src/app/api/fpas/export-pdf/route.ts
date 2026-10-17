@@ -3,14 +3,19 @@ import type { ReactElement } from "react";
 import type { DocumentProps } from "@react-pdf/renderer";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { db } from "@/lib/db";
-import { requirePermission } from "@/lib/auth-token";
+import { requireAnyPermission } from "@/lib/auth-token";
 import type { FpasFormData } from "@/lib/fpas-form";
 import { FpasPdfBundle, FpasPdfDocument } from "@/components/fpas/fpas-pdf";
 import { fpasPdfFilename, safeFilePart } from "@/lib/pdf-export";
 import { createZip } from "@/lib/zip-store";
 
 // ═══════════════════════════════════════════════════════════════
-// GET /api/fpas/export-pdf — department FPAS bundle (fpas.manage)
+// GET /api/fpas/export-pdf — department FPAS bundle (fpas.manage
+// or fpas.export). `fpas.manage` may export any scope (ALL);
+// `fpas.export`-only holders are locked to their OWN department —
+// any requested groupCode/ALL is overridden server-side, so no
+// client parameter can widen their scope (including submissionIds,
+// which are AND-scoped by the same group filter).
 //   ?schoolYear=YYYY-YYYY (required) &groupCode=XXX (optional, ALL)
 //   &submissionIds=id1,id2 (optional, max 100 — exact members, e.g.
 //   the hub's ticked selection; whole scope when omitted)
@@ -18,12 +23,15 @@ import { createZip } from "@/lib/zip-store";
 // ═══════════════════════════════════════════════════════════════
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requirePermission(request, "fpas.manage");
+    const auth = await requireAnyPermission(request, [
+      "fpas.manage",
+      "fpas.export",
+    ]);
     if (!auth.ok) return auth.response;
 
     const { searchParams } = new URL(request.url);
     const schoolYear = searchParams.get("schoolYear")?.trim() || "";
-    const groupCode = searchParams.get("groupCode") || "ALL";
+    let groupCode = searchParams.get("groupCode") || "ALL";
     const format = searchParams.get("format") === "zip" ? "zip" : "pdf";
     const submissionIds = (searchParams.get("submissionIds") || "")
       .split(",")
@@ -36,6 +44,24 @@ export async function GET(request: NextRequest) {
         { error: "schoolYear is required" },
         { status: 400 }
       );
+    }
+
+    // `fpas.manage` = unrestricted scope. Export-only holders are
+    // pinned to their own department's group code.
+    const canManage =
+      auth.user.isSystem || auth.user.permissions.includes("fpas.manage");
+    if (!canManage) {
+      const me = await db.employee.findUnique({
+        where: { id: auth.user.id },
+        select: { group: { select: { code: true } } },
+      });
+      if (!me?.group?.code) {
+        return NextResponse.json(
+          { error: "Forbidden - you are not associated with a department" },
+          { status: 403 }
+        );
+      }
+      groupCode = me.group.code;
     }
 
     let groupId: string | undefined;

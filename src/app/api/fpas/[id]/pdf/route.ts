@@ -10,7 +10,8 @@ import { fpasPdfFilename } from "@/lib/pdf-export";
 
 // ═══════════════════════════════════════════════════════════════
 // GET /api/fpas/[id]/pdf — download a single FPAS form as PDF.
-// Access: owner or fpas.manage (mirrors GET /api/fpas/[id]).
+// Access: owner, fpas.export (own department only), or fpas.manage
+// (mirrors GET /api/fpas/[id]).
 // ═══════════════════════════════════════════════════════════════
 export async function GET(
   request: NextRequest,
@@ -19,6 +20,7 @@ export async function GET(
   try {
     const auth = await requireAnyPermission(request, [
       "fpas.fill",
+      "fpas.export",
       "fpas.manage",
     ]);
     if (!auth.ok) return auth.response;
@@ -34,6 +36,7 @@ export async function GET(
             firstName: true,
             lastName: true,
             middleName: true,
+            group: { select: { id: true } },
           },
         },
       },
@@ -47,7 +50,15 @@ export async function GET(
     }
 
     const canManage = user.isSystem || user.permissions.includes("fpas.manage");
-    if (submission.employeeId !== user.id && !canManage) {
+    let allowed = submission.employeeId === user.id || canManage;
+    if (!allowed && user.permissions.includes("fpas.export")) {
+      const me = await db.employee.findUnique({
+        where: { id: user.id },
+        select: { groupId: true },
+      });
+      allowed = !!me?.groupId && me.groupId === submission.employee?.group?.id;
+    }
+    if (!allowed) {
       return NextResponse.json(
         { error: "Forbidden - you are not allowed to view this submission" },
         { status: 403 }

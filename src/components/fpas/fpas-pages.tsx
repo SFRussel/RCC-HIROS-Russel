@@ -11,6 +11,7 @@ import { canFillFpas } from "@/lib/fpas";
 import { FpasPrintDocument } from "@/components/fpas/fpas-print";
 import { FpasExportHub } from "@/components/fpas/fpas-export";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useAuth } from "@/hooks/use-auth";
 import { useAuthStore } from "@/store/auth-store";
 import { useUnsavedChanges, useNavigationGuard } from "@/hooks/use-unsaved-changes";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -132,6 +133,76 @@ export function FpasPage({ employeeId, submissionId, showSettings: showSettingsP
 
   // Default: no list view (removed) — redirect handled above.
   return null;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FPAS Export Page — standalone bulk-download hub for fpas.export
+// holders who do NOT manage FPAS (e.g. Deans). No configuration
+// controls: the department is locked to the holder's own group,
+// mirrored by a server-side scope pin in /api/fpas/export-pdf.
+// ═══════════════════════════════════════════════════════════════
+
+export function FpasExportPage() {
+  const { has } = usePermissions();
+  const { user } = useAuth();
+  const setCurrentPage = useAuthStore((s) => s.setCurrentPage);
+
+  const canManage = has("fpas.manage");
+  const [groups, setGroups] = useState<GroupBrief[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await apiFetch<{ groups: GroupBrief[] }>("/api/groups");
+        setGroups(data.groups ?? []);
+      } catch {
+        setError("Failed to load departments.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const ownGroup =
+    groups.find((g) => g.id === user?.groupId) ?? null;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-rcc-text-primary">FPAS Export</h1>
+          <p className="text-sm text-rcc-text-muted mt-0.5">
+            {canManage
+              ? "Download submitted appraisal forms in bulk (any department)."
+              : "Download the submitted appraisal forms of your department in bulk."}
+          </p>
+        </div>
+        <button
+          onClick={() => setCurrentPage("profiling")}
+          className="inline-flex items-center gap-2 bg-rcc-surface border border-rcc-border text-rcc-text-secondary px-4 py-2 rounded-md text-sm font-semibold hover:bg-rcc-bg transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Employee Records
+        </button>
+      </div>
+
+      {loading ? (
+        <p className="text-sm text-rcc-text-muted py-4 text-center">Loading departments…</p>
+      ) : error ? (
+        <div className="bg-red-50 border border-red-200 rounded-md p-2.5 text-xs text-rcc-error">{error}</div>
+      ) : canManage ? (
+        <FpasExportHub groups={groups} />
+      ) : ownGroup ? (
+        <FpasExportHub groups={groups} lockedGroup={ownGroup} />
+      ) : (
+        <div className="bg-rcc-surface rounded-lg border border-rcc-border p-6 text-sm text-rcc-text-muted">
+          You are not associated with a department, so there is nothing to export. Ask HR to set your department.
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════
