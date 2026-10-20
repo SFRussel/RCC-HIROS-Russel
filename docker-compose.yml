@@ -1,0 +1,100 @@
+name: rcc-hiros
+
+# ═══════════════════════════════════════════════════════════════
+# RCC-HIROS — single-host production stack
+#
+#   app        Next.js standalone server (built in CI, pulled from GHCR)
+#   db         MariaDB 11 with named volumes
+#   migrate    one-shot prisma migrate deploy / seed (profile: tools)
+#   cloudflared named Cloudflare Tunnel (profile: tunnel)
+#   tunnel-quick  throwaway trycloudflare URL (profile: quick)
+#
+# Usage:
+#   docker compose --env-file .env.production up -d app
+#   docker compose --env-file .env.production --profile tools run --rm migrate
+#   docker compose --env-file .env.production --profile quick up -d tunnel-quick
+#   docker compose --env-file .env.production --profile tunnel up -d cloudflared
+# ═══════════════════════════════════════════════════════════════
+
+services:
+  app:
+    image: ${APP_IMAGE:-ghcr.io/sfrussel/rcc-hiros-russel:latest}
+    build:
+      context: .
+      target: runner
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      TZ: ${TZ:-Asia/Manila}
+      # In Docker the ZK bridge listens on the Windows host, not the container.
+      KIOSK_SERVICE_URL: ${KIOSK_SERVICE_URL:-http://host.docker.internal:8765}
+    ports:
+      # Loopback only: the tunnel reaches the app over the compose network,
+      # so nothing needs to be exposed on the LAN.
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - uploads-data:/app/uploads
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: mariadb:11.4
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    env_file:
+      - .env.production
+    environment:
+      TZ: ${TZ:-Asia/Manila}
+    ports:
+      # 3307 on the host so XAMPP can keep 3306 during local development.
+      - "127.0.0.1:3307:3306"
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  migrate:
+    image: ${MIGRATE_IMAGE:-ghcr.io/sfrussel/rcc-hiros-russel:migrate}
+    build:
+      context: .
+      target: migrate
+    profiles: ["tools"]
+    env_file:
+      - .env.production
+    environment:
+      TZ: ${TZ:-Asia/Manila}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - app
+    restart: unless-stopped
+
+  tunnel-quick:
+    image: cloudflare/cloudflared:latest
+    profiles: ["quick"]
+    command: tunnel --no-autoupdate --url http://app:3000
+    depends_on:
+      - app
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  uploads-data:
