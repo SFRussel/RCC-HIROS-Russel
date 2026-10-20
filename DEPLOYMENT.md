@@ -10,17 +10,24 @@ school-controlled machine behind a Cloudflare Tunnel.
 
 ### Live deployment
 
-Until the domain is attached, the app is served by a Cloudflare **quick tunnel**.
-That hostname is regenerated whenever the tunnel container restarts, so treat it
-as a preview, not a permanent link:
+The production instance is served by a named Cloudflare Tunnel:
+
+**https://rcchiros.dpdns.org**
+
+`rcchiros.dpdns.org` is delegated from the free `dpdns.org` namespace to
+Cloudflare (`dee.ns.cloudflare.com`, `kirk.ns.cloudflare.com`). The tunnel
+`rcc-hiros` owns a proxied CNAME for the hostname and routes it to
+`http://app:3000` on the compose network. The pipeline's smoke test targets
+`PUBLIC_URL`, which is set to that hostname.
+
+A Cloudflare **quick tunnel** stays defined as a fallback for demos. Its
+hostname is regenerated whenever the container restarts, so treat it as a
+preview, not a permanent link:
 
 ```bash
+docker compose --env-file .env.production --profile quick up -d tunnel-quick
 docker compose --env-file .env.production logs tunnel-quick | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | tail -1
 ```
-
-The pipeline's smoke test targets `PUBLIC_URL` (repository variable), which
-defaults to `http://127.0.0.1:3000` on the host. Set it to the real hostname once
-the named tunnel is live.
 
 
 ---
@@ -77,9 +84,10 @@ physically fixed to one machine. To scale out later:
   DB are local. Two app replicas would still share one database and one volume.
 - **Builds happen on GitHub runners, not the host.** The host only pulls images,
   so a school PC never spends CPU on `next build`.
-- **A quick tunnel URL is not stable.** `https://*.trycloudflare.com` changes
-  when the tunnel container restarts. A named tunnel on a real domain is required
-  for a permanent link (see [Public URL](#public-url)).
+- **The free `dpdns.org` namespace is community-run.** Delegation and resolution
+  depend on DigitalPlat's parent zone; the named tunnel is permanent, but the
+  namespace itself is less durable than a paid registrar. The quick tunnel
+  remains a fallback for exactly that case.
 - **No CDN for uploads.** Photos are streamed by a route handler with
   `Cache-Control: no-store`, so every request hits the host. Acceptable at this
   scale, not at thousands of concurrent users.
@@ -157,7 +165,7 @@ push / PR ──► ci ───────────────────
 | `NEXT_PUBLIC_KIOSK_SERVICE_URL` | **build time** | `http://127.0.0.1:8765` | Inlined into the browser bundle; changing it requires a rebuild |
 | `KIOSK_ALLOWED_IPS` | runtime | `203.0.113.10` | Comma-separated allowlist for the unauthenticated `/api/biometric/zk/*` routes. Empty allows everyone (local demos) |
 | `MARIADB_DATABASE` / `MARIADB_USER` / `MARIADB_PASSWORD` / `MARIADB_ROOT_PASSWORD` | db container | — | First-boot initialisation only |
-| `CLOUDFLARE_TUNNEL_TOKEN` | tunnel container | — | From the Zero Trust dashboard; empty for quick tunnels |
+| `CLOUDFLARE_TUNNEL_TOKEN` | tunnel container | — | Minted with `cloudflared tunnel token rcc-hiros`; empty when only the quick tunnel runs |
 | `APP_IMAGE` | compose | `ghcr.io/sfrussel/rcc-hiros-russel:<sha>` | Pin a previous build to roll back |
 | `PUBLIC_URL` | GitHub variable | `https://hiros.example.com` | Used by the post-deploy smoke test; defaults to `http://127.0.0.1:3000` |
 
@@ -199,25 +207,39 @@ curl -fsS http://127.0.0.1:3000/api/health
 
 ### Public URL
 
-**Temporary (works today, URL changes on restart):**
+**Permanent: `https://rcchiros.dpdns.org`**
+
+Created once on the host, outside the checkout:
+
+```bash
+cloudflared tunnel login                 # authorise the rcchiros.dpdns.org zone
+cloudflared tunnel create rcc-hiros      # writes ~/.cloudflared/<uuid>.json
+cloudflared tunnel route dns rcc-hiros rcchiros.dpdns.org
+
+# The connector token, padded exactly as printed:
+cloudflared tunnel token rcc-hiros
+# → CLOUDFLARE_TUNNEL_TOKEN="eyJ..." in ~/rcc-hiros-deploy/.env.production
+
+docker compose --env-file .env.production --profile tunnel up -d cloudflared
+
+# The smoke test then checks the real URL:
+gh variable set PUBLIC_URL --body "https://rcchiros.dpdns.org"
+```
+
+The tunnel's ingress (`rcchiros.dpdns.org → http://app:3000`) is remote config.
+If it is ever lost, re-apply it with the API:
+
+```bash
+curl -X PUT "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/cfd_tunnel/$TUNNEL_ID/configurations" \
+  -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
+  -d '{"config":{"ingress":[{"hostname":"rcchiros.dpdns.org","service":"http://app:3000"},{"service":"http_status:404"}]}}'
+```
+
+**Temporary fallback (URL changes on restart):**
 
 ```bash
 docker compose --env-file .env.production --profile quick up -d tunnel-quick
 docker compose --env-file .env.production logs tunnel-quick | grep trycloudflare
-```
-
-**Permanent (needs a domain on Cloudflare):**
-
-```bash
-cloudflared tunnel login
-cloudflared tunnel create rcc-hiros
-cloudflared tunnel route dns rcc-hiros hiros.example.com
-
-# Put the token from the dashboard into .env.production, then:
-docker compose --env-file .env.production --profile tunnel up -d cloudflared
-
-# Finally, set the repository variable so the smoke test checks the real URL:
-gh variable set PUBLIC_URL --body "https://hiros.example.com"
 ```
 
 The tunnel connects outbound only. Do not open ports 3000, 3306, or 8765 on
@@ -333,6 +355,6 @@ docker exec rcc-hiros-db-1 sh -c \
 - [x] Attendance CSV export (3,622 rows) over the tunnel
 - [x] Kiosk guard returns 403 for a non-allowlisted IP and is inert when `KIOSK_ALLOWED_IPS` is empty
 - [x] `scripts/backup.sh` produced a 22-table dump and an uploads archive, then pruned by age
-- [ ] Named tunnel on the final domain, `PUBLIC_URL` variable set
-- [ ] Admin password rotated before the URL is shared publicly
+- [x] Named tunnel on `rcchiros.dpdns.org`, `PUBLIC_URL` variable set, `/api/health` 200 over HTTPS
+- [x] Admin password rotated before the URL is shared publicly
 - [ ] Nightly backup scheduled and restored once in a dry run
