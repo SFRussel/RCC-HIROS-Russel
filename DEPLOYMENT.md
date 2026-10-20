@@ -322,6 +322,12 @@ docker exec rcc-hiros-db-1 sh -c \
 - [x] `npx tsc --noEmit` and `npm run lint` pass (0 errors)
 - [x] Docker image builds from a clean context (44 MB standalone output)
 - [x] First green run of `.github/workflows/deploy.yml` on `main` (deploy job pulled `:<sha>` from GHCR, migrated, restarted, passed the smoke test)
+- [x] Employee photo upload served after the app container restarted (uploads volume, not the image layer)
+- [x] 9.4 MB PDF uploaded and downloaded through the container (no serverless body cap)
+- [x] FPAS export: merged PDF and per-member ZIP for 2026-2027
+- [x] Attendance CSV export (3,622 rows) over the tunnel
+- [x] Kiosk guard returns 403 for a non-allowlisted IP and is inert when `KIOSK_ALLOWED_IPS` is empty
+- [x] `scripts/backup.sh` produced a 22-table dump and an uploads archive, then pruned by age
 - [ ] Named tunnel on the final domain, `PUBLIC_URL` variable set
 - [ ] Admin password rotated before the URL is shared publicly
 - [ ] Nightly backup scheduled and restored once in a dry run
