@@ -224,6 +224,26 @@ The tunnel connects outbound only. Do not open ports 3000, 3306, or 8765 on
 the router or in Windows Firewall; the compose file binds the app and the
 database to `127.0.0.1` on the host.
 
+### Restarting the stack
+
+After each deploy the job writes `APP_IMAGE` and `MIGRATE_IMAGE` into
+`~/rcc-hiros-deploy/.env.production`, so a restart reuses the exact image that
+was deployed:
+
+```bash
+docker compose --env-file .env.production up -d app
+docker compose --env-file .env.production restart app
+```
+
+Do not run `docker compose up -d` against a checkout whose env file has no
+`APP_IMAGE`: compose falls back to the `:latest` default, does not pull, and can
+silently start an older local image. Pass the tag explicitly if you are unsure:
+
+```bash
+APP_IMAGE=ghcr.io/sfrussel/rcc-hiros-russel:<sha> \
+  docker compose --env-file .env.production up -d app
+```
+
 ### Rollback
 
 ```bash
@@ -285,6 +305,11 @@ docker exec rcc-hiros-db-1 sh -c \
   them to the school's egress IP, and the guard is inert while the variable is
   empty so local demos keep working. A Cloudflare WAF rule on
   `/api/biometric/zk/*` is the outer layer.
+- **Compose can silently start a stale image.** `up -d` resolves
+  `${APP_IMAGE:-…:latest}`, does not pull, and `:latest` on the host may be an
+  old build. A manual `up -d` served an image without the kiosk guard for a few
+  minutes. The deploy job now pins the deployed tag in the host env file, and the
+  runbook says to use that file when restarting.
 
 ---
 
