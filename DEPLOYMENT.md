@@ -8,6 +8,21 @@ school-controlled machine behind a Cloudflare Tunnel.
 - **CI/CD:** [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)
 - **Public URL:** set as the `PUBLIC_URL` repository variable (see [Public URL](#public-url))
 
+### Live deployment
+
+Until the domain is attached, the app is served by a Cloudflare **quick tunnel**.
+That hostname is regenerated whenever the tunnel container restarts, so treat it
+as a preview, not a permanent link:
+
+```bash
+docker compose --env-file .env.production logs tunnel-quick | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | tail -1
+```
+
+The pipeline's smoke test targets `PUBLIC_URL` (repository variable), which
+defaults to `http://127.0.0.1:3000` on the host. Set it to the real hostname once
+the named tunnel is live.
+
+
 ---
 
 ## 1. Chosen infrastructure
@@ -140,6 +155,7 @@ push / PR ──► ci ───────────────────
 | `TZ` | runtime | `Asia/Manila` | Attendance timestamps use server-local time |
 | `KIOSK_SERVICE_URL` | runtime | `http://host.docker.internal:8765` | Server-side 1:N matching |
 | `NEXT_PUBLIC_KIOSK_SERVICE_URL` | **build time** | `http://127.0.0.1:8765` | Inlined into the browser bundle; changing it requires a rebuild |
+| `KIOSK_ALLOWED_IPS` | runtime | `203.0.113.10` | Comma-separated allowlist for the unauthenticated `/api/biometric/zk/*` routes. Empty allows everyone (local demos) |
 | `MARIADB_DATABASE` / `MARIADB_USER` / `MARIADB_PASSWORD` / `MARIADB_ROOT_PASSWORD` | db container | — | First-boot initialisation only |
 | `CLOUDFLARE_TUNNEL_TOKEN` | tunnel container | — | From the Zero Trust dashboard; empty for quick tunnels |
 | `APP_IMAGE` | compose | `ghcr.io/sfrussel/rcc-hiros-russel:<sha>` | Pin a previous build to roll back |
@@ -221,18 +237,28 @@ migration must be undone.
 
 ### Backups
 
+`scripts/backup.sh` dumps the database and archives the uploads volume into
+`backups/`, then prunes files older than `KEEP_DAYS` (default 14):
+
 ```bash
-# schema + data
+./scripts/backup.sh
+```
+
+It reads `.env.production` from the compose directory and uses the container's
+own `mariadb-dump`, so no client tools are needed on the host. Schedule it in
+Windows Task Scheduler (or cron inside WSL):
+
+```
+0 2 * * * cd /home/russe/rcc-hiros && ./scripts/backup.sh >> backups/backup.log 2>&1
+```
+
+Manual equivalent, if you need it:
+
+```bash
 docker exec rcc-hiros-db-1 sh -c \
   'exec mariadb-dump -uroot -p"$MARIADB_ROOT_PASSWORD" --single-transaction --routines rcc_hiros' \
   > backups/rcc_hiros-$(date +%F).sql
-
-# uploads volume
-docker run --rm -v rcc-hiros_uploads-data:/data -v "$PWD/backups":/backup alpine \
-  tar czf /backup/uploads-$(date +%F).tgz -C /data .
 ```
-
-Run both before every release, or nightly via Windows Task Scheduler.
 
 ---
 
@@ -254,6 +280,11 @@ Run both before every release, or nightly via Windows Task Scheduler.
 - **Secrets never enter the image.** `next build` copies `.env` into
   `.next/standalone` when present, so `.env*` is excluded from the Docker build
   context and all values are injected at runtime.
+- **The kiosk endpoints are unauthenticated by design.** They are called by a
+  browser that has no session, only a fingerprint. `KIOSK_ALLOWED_IPS` restricts
+  them to the school's egress IP, and the guard is inert while the variable is
+  empty so local demos keep working. A Cloudflare WAF rule on
+  `/api/biometric/zk/*` is the outer layer.
 
 ---
 
@@ -265,6 +296,7 @@ Run both before every release, or nightly via Windows Task Scheduler.
 - [x] Uploads volume is writable by the non-root container user
 - [x] `npx tsc --noEmit` and `npm run lint` pass (0 errors)
 - [x] Docker image builds from a clean context (44 MB standalone output)
-- [ ] First green run of `.github/workflows/deploy.yml` on `main`
+- [x] First green run of `.github/workflows/deploy.yml` on `main` (deploy job pulled `:<sha>` from GHCR, migrated, restarted, passed the smoke test)
 - [ ] Named tunnel on the final domain, `PUBLIC_URL` variable set
 - [ ] Admin password rotated before the URL is shared publicly
+- [ ] Nightly backup scheduled and restored once in a dry run

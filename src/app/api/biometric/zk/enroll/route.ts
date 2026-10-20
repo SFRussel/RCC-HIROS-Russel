@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAnyPermission } from "@/lib/auth-token";
 import { db } from "@/lib/db";
 import { KIOSK_SERVICE_URL } from "@/lib/kiosk";
+import { requireKioskNetwork } from "@/lib/kiosk-guard";
 
 // ═══════════════════════════════════════════════════════════════
 // POST /api/biometric/zk/enroll  — biometric.enroll | canManageBiometrics
@@ -10,6 +11,9 @@ import { KIOSK_SERVICE_URL } from "@/lib/kiosk";
 // ═══════════════════════════════════════════════════════════════
 
 export async function POST(request: NextRequest) {
+  const denied = requireKioskNetwork(request);
+  if (denied) return denied;
+
   try {
     const auth = await requireAnyPermission(request, [
       "biometric.enroll",

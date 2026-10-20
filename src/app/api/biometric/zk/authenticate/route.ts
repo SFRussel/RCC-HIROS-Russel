@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { KIOSK_SERVICE_URL } from "@/lib/kiosk";
+import { requireKioskNetwork } from "@/lib/kiosk-guard";
 
 // Rate limit: one request per employeeId per 5 seconds (like kiosk/clock)
 const lastRequest = new Map<string, number>();
@@ -17,6 +18,9 @@ function startOfDay(d: Date): Date {
 // ═══════════════════════════════════════════════════════════════
 
 export async function POST(request: NextRequest) {
+  const denied = requireKioskNetwork(request);
+  if (denied) return denied;
+
   try {
     const body = await request.json();
     const { liveB64, deviceName } = body as {
