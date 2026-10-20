@@ -169,5 +169,16 @@ jobs:
           docker compose --env-file .env.production logs --tail=80 app
           exit 1
 
+      # Every later `docker compose` run on the host (restart, logs, manual
+      # `up -d`) must resolve the same image the pipeline deployed. Without
+      # this pin, compose falls back to the `:latest` default in the compose
+      # file and can silently start an older local image.
+      - name: Pin deployed image in host environment
+        run: |
+          sed -i '/^APP_IMAGE=/d;/^MIGRATE_IMAGE=/d' .env.production
+          printf '\n# Pinned by the deploy job (%s)\nAPP_IMAGE=%s\nMIGRATE_IMAGE=%s\n' \
+            "$GITHUB_SHA" "$APP_IMAGE" "$MIGRATE_IMAGE" >> .env.production
+          cp .env.production "$HOME/rcc-hiros-deploy/.env.production"
+
       - name: Prune dangling images
         run: docker image prune -f
