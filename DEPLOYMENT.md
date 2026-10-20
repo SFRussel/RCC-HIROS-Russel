@@ -265,8 +265,13 @@ migration must be undone.
 ```
 
 It reads `.env.production` from the compose directory and uses the container's
-own `mariadb-dump`, so no client tools are needed on the host. Schedule it in
-Windows Task Scheduler (or cron inside WSL):
+own `mariadb-dump`, so no client tools are needed on the host. When the checkout
+lives on a Windows drive (`/mnt/c`, `/mnt/e`), the archives go to
+`~/rcc-hiros-backups` instead of `./backups`: Docker Desktop cannot bind-mount a
+Windows path into a container, and the write would silently land in a temporary
+directory. Set `BACKUP_DIR` to override either default.
+
+Schedule it in Windows Task Scheduler (or cron inside WSL):
 
 ```
 0 2 * * * cd /home/russe/rcc-hiros && ./scripts/backup.sh >> backups/backup.log 2>&1

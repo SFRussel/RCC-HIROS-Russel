@@ -18,7 +18,18 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_DIR="${COMPOSE_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 ENV_FILE="${ENV_FILE:-$COMPOSE_DIR/.env.production}"
-BACKUP_DIR="${BACKUP_DIR:-$COMPOSE_DIR/backups}"
+
+# Docker Desktop resolves bind-mount sources as paths inside its own VM, so a
+# checkout reached through /mnt/c or /mnt/e (a Windows drive) cannot be mounted:
+# the tar lands in a throwaway directory and the host never sees it. Fall back
+# to the Linux home when the compose directory lives on a Windows drive.
+if [ -z "${BACKUP_DIR:-}" ]; then
+  case "$COMPOSE_DIR" in
+    /mnt/*) BACKUP_DIR="$HOME/rcc-hiros-backups" ;;
+    *) BACKUP_DIR="$COMPOSE_DIR/backups" ;;
+  esac
+fi
+
 KEEP_DAYS="${KEEP_DAYS:-14}"
 PROJECT_NAME="${PROJECT_NAME:-rcc-hiros}"
 DB_SERVICE="${DB_SERVICE:-db}"
